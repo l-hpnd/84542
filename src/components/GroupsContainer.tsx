@@ -1,168 +1,102 @@
 import React, { useEffect, useState } from "react";
-import { ref, onValue, push, update, remove } from "firebase/database";
-import { db } from "../firebase";
+import { ref, onValue, set, update, push } from "firebase/database";
+import { db } from "../firebase"; // путь к твоему firebase.ts
 import TimerButton from "./TimerButton";
+import { v4 as uuidv4 } from "uuid";
 
-interface ButtonData {
+type Button = {
+  id: string;
   name: string;
   duration: number;
+  startedAt: number | null;
   isActive: boolean;
-  originalIndex: number;
-}
+};
 
-interface GroupData {
+type Group = {
+  id: string;
   name: string;
-  buttons: Record<string, ButtonData>;
-  originalIndex: number;
-}
+  buttons: Record<string, Button>;
+};
 
 const GroupsContainer: React.FC = () => {
-  const [groups, setGroups] = useState<Record<string, GroupData>>({});
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [groups, setGroups] = useState<Record<string, Group>>({});
 
+  // Подписка на все группы
   useEffect(() => {
     const groupsRef = ref(db, "groups");
-    return onValue(groupsRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      setGroups(data);
+    const unsubscribe = onValue(groupsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setGroups(data);
+      }
     });
+
+    return () => unsubscribe();
   }, []);
 
-  const addButton = (groupId: string) => {
-    const group = groups[groupId];
-    if (!group) return;
-
-    const buttonsArray = Object.entries(group.buttons || {});
-    const originalIndex = buttonsArray.length;
-
-    const newButtonRef = push(ref(db, `groups/${groupId}/buttons`));
-    update(newButtonRef, {
-      name: `New ${originalIndex + 1}`,
-      duration: 60,
+  const handleAddButton = (groupId: string) => {
+    const buttonId = uuidv4();
+    const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
+    set(buttonRef, {
+      id: buttonId,
+      name: `New Button`,
+      duration: 30,
+      startedAt: null,
       isActive: true,
-      originalIndex,
     });
   };
 
-  const moveButton = (groupId: string, buttonId: string, direction: "up" | "down") => {
-    const buttons = Object.entries(groups[groupId]?.buttons || {})
-      .filter(([_, b]) => b.isActive)
-      .sort(([, a], [, b]) => a.originalIndex - b.originalIndex);
+  const handleGroupNameChange = (groupId: string, newName: string) => {
+    const groupNameRef = ref(db, `groups/${groupId}`);
+    update(groupNameRef, { name: newName });
+  };
 
-    const index = buttons.findIndex(([id]) => id === buttonId);
-    const swapWith = direction === "up" ? index - 1 : index + 1;
-
-    if (index === -1 || swapWith < 0 || swapWith >= buttons.length) return;
-
-    const [currId, currBtn] = buttons[index];
-    const [swapId, swapBtn] = buttons[swapWith];
-
-    update(ref(db), {
-      [`groups/${groupId}/buttons/${currId}/originalIndex`]: swapBtn.originalIndex,
-      [`groups/${groupId}/buttons/${swapId}/originalIndex`]: currBtn.originalIndex,
+  const handleAddGroup = () => {
+    const groupId = uuidv4();
+    const groupRef = ref(db, `groups/${groupId}`);
+    set(groupRef, {
+      id: groupId,
+      name: "New Group",
+      buttons: {},
     });
   };
-
-  {isEditMode && (
-  <button
-    onClick={addGroup}
-    className="ml-2 px-4 py-2 bg-blue-600 text-white rounded"
-  >
-    + Группа
-  </button>
-)};
-const moveGroup = (groupId: string, direction: "up" | "down") => {
-    const sortedGroups = Object.entries(groups).sort(
-      ([, a], [, b]) => (a.originalIndex ?? 0) - (b.originalIndex ?? 0)
-    );
-
-    const index = sortedGroups.findIndex(([id]) => id === groupId);
-    const swapWith = direction === "up" ? index - 1 : index + 1;
-
-    if (index === -1 || swapWith < 0 || swapWith >= sortedGroups.length) return;
-
-    const [currId, currGroup] = sortedGroups[index];
-    const [swapId, swapGroup] = sortedGroups[swapWith];
-
-    update(ref(db), {
-      [`groups/${currId}/originalIndex`]: swapGroup.originalIndex,
-      [`groups/${swapId}/originalIndex`]: currGroup.originalIndex,
-    });
-  };
-
-  const updateGroupName = (groupId: string, name: string) => {
-    update(ref(db, `groups/${groupId}`), { name });
-  };
-
-  const sortedGroups = Object.entries(groups).sort(
-    ([, a], [, b]) => (a.originalIndex ?? 0) - (b.originalIndex ?? 0)
-  );
 
   return (
-    <div className="p-4">
-      <div className="mb-4">
-        <button
-          onClick={() => setIsEditMode((prev) => !prev)}
-          className="px-4 py-2 bg-green-600 text-white rounded"
-        >
-          {isEditMode ? "Готово" : "Редактировать"}
-        </button>
-      </div>
-
-      {sortedGroups.map(([groupId, group], groupIdx) => (
-        <div key={groupId} className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <div className="flex items-center space-x-2">
-              {isEditMode ? (
-                <input
-                  value={group.name}
-                  onChange={(e) => updateGroupName(groupId, e.target.value)}
-                  className="border px-2 py-1 rounded"
-                />
-              ) : (
-                <h2 className="text-lg font-semibold">{group.name}</h2>
-              )}
-              {isEditMode && (
-                <>
-                  <button onClick={() => moveGroup(groupId, "up")}>▲</button>
-                  <button onClick={() => moveGroup(groupId, "down")}>▼</button>
-                </>
-              )}
-            </div>
-            {isEditMode && (
-              <button
-                onClick={() => addButton(groupId)}
-                className="text-sm px-2 py-1 bg-blue-500 text-white rounded"
-              >
-                + Кнопка
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+    <div className="p-4 space-y-4">
+      {Object.entries(groups).map(([groupId, group]) => (
+        <div key={groupId} className="border rounded p-2 shadow">
+          <input
+            className="text-lg font-semibold mb-2 border-b outline-none"
+            value={group.name}
+            onChange={(e) => handleGroupNameChange(groupId, e.target.value)}
+          />
+          <div className="flex flex-wrap">
             {group.buttons &&
-              Object.entries(group.buttons)
-                .sort(([_, a], [__, b]) => {
-                  if (a.isActive === b.isActive) {
-                    return (a.originalIndex ?? 0) - (b.originalIndex ?? 0);
-                  }
-                  return a.isActive ? -1 : 1;
-                })
-                .map(([buttonId, buttonData]) => (
-                  <TimerButton
-                    key={buttonId}
-                    groupId={groupId}
-                    buttonId={buttonId}
-                    name={buttonData.name}
-                    duration={buttonData.duration}
-                    isActive={buttonData.isActive}
-                    isEditMode={isEditMode}
-                    onMove={(dir) => moveButton(groupId, buttonId, dir)}
-                  />
-                ))}
+              Object.entries(group.buttons).map(([buttonId, button]) => (
+                <TimerButton
+                  key={buttonId}
+                  groupId={groupId}
+                  buttonId={buttonId}
+                  name={button.name}
+                  duration={button.duration}
+                  isActive={button.isActive}
+                />
+              ))}
           </div>
+          <button
+            onClick={() => handleAddButton(groupId)}
+            className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+          >
+            + Add Button
+          </button>
         </div>
       ))}
+      <button
+        onClick={handleAddGroup}
+        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm"
+      >
+        + Add Group
+      </button>
     </div>
   );
 };
