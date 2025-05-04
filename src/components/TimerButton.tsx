@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ref, update, onValue } from "firebase/database";
-import { db } from "../firebase"; // путь к твоему файлу firebase.ts
+import { db } from "../firebase";
 import classNames from "classnames";
 
 interface TimerButtonProps {
@@ -24,7 +24,6 @@ const TimerButton: React.FC<TimerButtonProps> = ({
 
   const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
 
-  // Подписка на изменения startedAt и duration из Firebase
   useEffect(() => {
     const unsubscribe = onValue(buttonRef, (snapshot) => {
       const data = snapshot.val();
@@ -50,7 +49,6 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     return () => unsubscribe();
   }, [buttonId, groupId]);
 
-  // Локальный таймер обратного отсчета
   useEffect(() => {
     if (!startedAt) return;
 
@@ -60,9 +58,7 @@ const TimerButton: React.FC<TimerButtonProps> = ({
       setTimeLeft(remaining > 0 ? remaining : 0);
       setIsRunning(remaining > 0);
 
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
+      if (remaining <= 0) clearInterval(interval);
     }, 1000);
 
     return () => clearInterval(interval);
@@ -100,19 +96,25 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     ? "bg-red-500"
     : "bg-green-500";
 
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
   return (
     <div className="flex flex-col items-center justify-center text-xs m-1 w-20">
       <button
         onClick={handleStart}
         disabled={!isActive}
         className={classNames(
-          "text-white font-bold py-1 px-2 rounded w-full h-8 text-[10px]",
+          "text-white font-bold py-1 px-2 rounded w-full h-9 text-[11px]",
           buttonColor
         )}
       >
         {name}
       </button>
-      <div className="text-[10px]">{timeLeft}s</div>
+      <div className="text-[12px] font-semibold">{formatTime(timeLeft)}</div>
       <div className="flex gap-1 mt-1">
         <button
           onClick={handleReset}
