@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { ref, update, onValue } from "firebase/database";
+import { ref, update } from "firebase/database";
 import { db } from "../firebase";
 import classNames from "classnames";
 
-interface TimerButtonProps {
+type TimerButtonProps = {
   groupId: string;
   buttonId: string;
   name: string;
   duration: number;
   isActive: boolean;
-}
+};
 
 const TimerButton: React.FC<TimerButtonProps> = ({
   groupId,
@@ -18,84 +18,35 @@ const TimerButton: React.FC<TimerButtonProps> = ({
   duration,
   isActive,
 }) => {
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(duration);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-
-  const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onValue(buttonRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data?.startedAt && data.duration) {
-        const elapsed = Math.floor((Date.now() - data.startedAt) / 1000);
-        const remaining = data.duration - elapsed;
-        if (remaining > 0) {
-          setStartedAt(data.startedAt);
-          setTimeLeft(remaining);
-          setIsRunning(true);
-        } else {
-          setStartedAt(null);
-          setTimeLeft(data.duration);
-          setIsRunning(false);
-        }
-      } else {
-        setStartedAt(null);
-        setTimeLeft(duration);
-        setIsRunning(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [buttonId, groupId]);
-
-  useEffect(() => {
-    if (!startedAt) return;
-
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      const remaining = duration - elapsed;
-      setTimeLeft(remaining > 0 ? remaining : 0);
-      setIsRunning(remaining > 0);
-
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
+    let interval: NodeJS.Timeout;
+    if (isRunning && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0) {
+      setIsRunning(false);
+    }
     return () => clearInterval(interval);
-  }, [startedAt, duration]);
+  }, [isRunning, timeLeft]);
 
   const handleStart = () => {
-    if (!isRunning) {
-      update(buttonRef, {
-        startedAt: Date.now(),
-        duration,
-        isActive: true,
-      });
-    }
+    if (!isActive || isRunning) return;
+    setTimeLeft(duration);
+    setIsRunning(true);
   };
 
   const handleReset = () => {
-    update(buttonRef, {
-      startedAt: null,
-      isActive: true,
-    });
-    setTimeLeft(duration);
     setIsRunning(false);
+    setTimeLeft(0);
   };
 
   const handleDisable = () => {
-    update(buttonRef, {
-      isActive: false,
-      startedAt: null,
-    });
-  };
-
-  const formatTime = (totalSeconds: number) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+    const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
+    update(buttonRef, { isActive: false });
   };
 
   const buttonColor = !isActive
@@ -103,6 +54,14 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     : isRunning
     ? "bg-red-500"
     : "bg-green-500";
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
 
   return (
     <div className="flex flex-col items-center justify-center text-xs m-1 w-20">
@@ -116,7 +75,7 @@ const TimerButton: React.FC<TimerButtonProps> = ({
       >
         {name}
       </button>
-      <div className="text-[10px]">{formatTime(timeLeft)}</div>
+      <div className="text-lg font-bold mt-1">{formatTime(timeLeft)}</div>
       <div className="flex gap-1 mt-1">
         <button
           onClick={handleReset}
@@ -124,12 +83,14 @@ const TimerButton: React.FC<TimerButtonProps> = ({
         >
           Reset
         </button>
-        <button
-          onClick={handleDisable}
-          className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
-        >
-          X
-        </button>
+        {isActive ? (
+          <button
+            onClick={handleDisable}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
+          >
+            X
+          </button>
+        ) : null}
       </div>
     </div>
   );
