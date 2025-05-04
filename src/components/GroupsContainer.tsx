@@ -1,102 +1,84 @@
 import React, { useEffect, useState } from "react";
-import { ref, onValue, set, update, push } from "firebase/database";
-import { db } from "../firebase"; // путь к твоему firebase.ts
+import { ref, onValue, push, update } from "firebase/database";
+import { db } from "../firebase";
 import TimerButton from "./TimerButton";
-import { v4 as uuidv4 } from "uuid";
 
-type Button = {
-  id: string;
+interface ButtonData {
   name: string;
   duration: number;
-  startedAt: number | null;
   isActive: boolean;
-};
+  originalIndex: number;
+}
 
-type Group = {
-  id: string;
+interface GroupData {
   name: string;
-  buttons: Record<string, Button>;
-};
+  buttons: Record<string, ButtonData>;
+}
 
 const GroupsContainer: React.FC = () => {
-  const [groups, setGroups] = useState<Record<string, Group>>({});
+  const [groups, setGroups] = useState<Record<string, GroupData>>({});
 
-  // Подписка на все группы
+  // Слушаем все группы и кнопки
   useEffect(() => {
     const groupsRef = ref(db, "groups");
-    const unsubscribe = onValue(groupsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setGroups(data);
-      }
+    return onValue(groupsRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setGroups(data);
     });
-
-    return () => unsubscribe();
   }, []);
 
-  const handleAddButton = (groupId: string) => {
-    const buttonId = uuidv4();
-    const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
-    set(buttonRef, {
-      id: buttonId,
-      name: `New Button`,
-      duration: 30,
-      startedAt: null,
+  const addButton = (groupId: string) => {
+    const group = groups[groupId];
+    if (!group) return;
+
+    const buttonsArray = Object.entries(group.buttons || {});
+    const originalIndex = buttonsArray.length;
+
+    const newButtonRef = push(ref(db, `groups/${groupId}/buttons`));
+    update(newButtonRef, {
+      name: `New ${originalIndex + 1}`,
+      duration: 60,
       isActive: true,
-    });
-  };
-
-  const handleGroupNameChange = (groupId: string, newName: string) => {
-    const groupNameRef = ref(db, `groups/${groupId}`);
-    update(groupNameRef, { name: newName });
-  };
-
-  const handleAddGroup = () => {
-    const groupId = uuidv4();
-    const groupRef = ref(db, `groups/${groupId}`);
-    set(groupRef, {
-      id: groupId,
-      name: "New Group",
-      buttons: {},
+      originalIndex,
     });
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4">
       {Object.entries(groups).map(([groupId, group]) => (
-        <div key={groupId} className="border rounded p-2 shadow">
-          <input
-            className="text-lg font-semibold mb-2 border-b outline-none"
-            value={group.name}
-            onChange={(e) => handleGroupNameChange(groupId, e.target.value)}
-          />
+        <div key={groupId} className="mb-6">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-semibold">{group.name}</h2>
+            <button
+              onClick={() => addButton(groupId)}
+              className="text-sm px-2 py-1 bg-blue-500 text-white rounded"
+            >
+              + Add Button
+            </button>
+          </div>
+
           <div className="flex flex-wrap">
             {group.buttons &&
-              Object.entries(group.buttons).map(([buttonId, button]) => (
-                <TimerButton
-                  key={buttonId}
-                  groupId={groupId}
-                  buttonId={buttonId}
-                  name={button.name}
-                  duration={button.duration}
-                  isActive={button.isActive}
-                />
-              ))}
+              Object.entries(group.buttons)
+                .sort(([_, a], [__, b]) => {
+                  if (a.isActive === b.isActive) {
+                    return (a.originalIndex ?? 0) - (b.originalIndex ?? 0);
+                  }
+                  return a.isActive ? -1 : 1;
+                })
+                .map(([buttonId, buttonData]) => (
+                  <TimerButton
+                    key={buttonId}
+                    groupId={groupId}
+                    buttonId={buttonId}
+                    name={buttonData.name}
+                    duration={buttonData.duration}
+                    isActive={buttonData.isActive}
+                  />
+                ))}
           </div>
-          <button
-            onClick={() => handleAddButton(groupId)}
-            className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
-          >
-            + Add Button
-          </button>
         </div>
       ))}
-      <button
-        onClick={handleAddGroup}
-        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm"
-      >
-        + Add Group
-      </button>
     </div>
   );
 };
