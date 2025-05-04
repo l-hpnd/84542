@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ref, update, onValue } from "firebase/database";
-import { db } from "../firebase"; // путь к твоему файлу firebase.ts
+import { db } from "../firebase";
 import classNames from "classnames";
 
 interface TimerButtonProps {
@@ -24,7 +24,6 @@ const TimerButton: React.FC<TimerButtonProps> = ({
 
   const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
 
-  // Подписка на изменения startedAt и duration из Firebase
   useEffect(() => {
     const unsubscribe = onValue(buttonRef, (snapshot) => {
       const data = snapshot.val();
@@ -50,7 +49,6 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     return () => unsubscribe();
   }, [buttonId, groupId]);
 
-  // Локальный таймер обратного отсчета
   useEffect(() => {
     if (!startedAt) return;
 
@@ -94,6 +92,12 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     });
   };
 
+  const formatTime = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
   const buttonColor = !isActive
     ? "bg-gray-400"
     : isRunning
@@ -112,7 +116,7 @@ const TimerButton: React.FC<TimerButtonProps> = ({
       >
         {name}
       </button>
-      <div className="text-[10px]">{timeLeft}s</div>
+      <div className="text-[10px]">{formatTime(timeLeft)}</div>
       <div className="flex gap-1 mt-1">
         <button
           onClick={handleReset}
