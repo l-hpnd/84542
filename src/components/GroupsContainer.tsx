@@ -222,8 +222,15 @@ const GroupsContainer: React.FC = () => {
             <div className="flex flex-wrap gap-2">
               {group.buttons &&
                 Object.entries(group.buttons)
-                  .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
-                  .map(([buttonId, button]) => (
+  .sort(([, a], [, b]) => {
+    // Сначала активные, затем неактивные; внутри каждой группы — по order
+    if (a.isActive !== b.isActive) {
+      return a.isActive ? -1 : 1;
+    }
+    return (a.order ?? 0) - (b.order ?? 0);
+  })
+  .map(([buttonId, button]) => (
+
                     <div key={buttonId} className="flex items-center gap-2">
                       {isEditing ? (
                         <>
