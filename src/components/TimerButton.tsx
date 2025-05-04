@@ -1,152 +1,132 @@
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useEffect, useState } from "react";
+import { ref, update, onValue } from "firebase/database";
+import { db } from "../firebase"; // путь к твоему файлу firebase.ts
+import classNames from "classnames";
 
 interface TimerButtonProps {
-  label: string;
-  groupName: string;
-  isDeleted: boolean;
-  isNew: boolean;
-  index: number;
-  isEditMode: boolean;
-  onDelete: () => void;
-  onRestore: () => void;
-  onLabelChange: (newLabel: string) => void;
-  onRemove: () => void;
+  groupId: string;
+  buttonId: string;
+  name: string;
   duration: number;
+  isActive: boolean;
 }
 
 const TimerButton: React.FC<TimerButtonProps> = ({
-  label,
-  isDeleted,
-  isEditMode,
-  isNew,
-  onDelete,
-  onRestore,
-  onLabelChange,
-  onRemove,
+  groupId,
+  buttonId,
+  name,
   duration,
+  isActive,
 }) => {
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(duration);
+  const [isRunning, setIsRunning] = useState<boolean>(false);
 
+  const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
+
+  // Подписка на изменения startedAt и duration из Firebase
   useEffect(() => {
-    if (!isRunning || timeLeft === null) return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev !== null && prev > 0) {
-          return prev - 1;
+    const unsubscribe = onValue(buttonRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data?.startedAt && data.duration) {
+        const elapsed = Math.floor((Date.now() - data.startedAt) / 1000);
+        const remaining = data.duration - elapsed;
+        if (remaining > 0) {
+          setStartedAt(data.startedAt);
+          setTimeLeft(remaining);
+          setIsRunning(true);
         } else {
-          clearInterval(timer);
+          setStartedAt(null);
+          setTimeLeft(data.duration);
           setIsRunning(false);
-          return null;
         }
-      });
+      } else {
+        setStartedAt(null);
+        setTimeLeft(duration);
+        setIsRunning(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [buttonId, groupId]);
+
+  // Локальный таймер обратного отсчета
+  useEffect(() => {
+    if (!startedAt) return;
+
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const remaining = duration - elapsed;
+      setTimeLeft(remaining > 0 ? remaining : 0);
+      setIsRunning(remaining > 0);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+      }
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [isRunning, timeLeft]);
+    return () => clearInterval(interval);
+  }, [startedAt, duration]);
 
   const handleStart = () => {
-    if (isDeleted || isEditMode) return;
-    setTimeLeft(duration);
-    setIsRunning(true);
+    if (!isRunning) {
+      update(buttonRef, {
+        startedAt: Date.now(),
+        duration,
+        isActive: true,
+      });
+    }
   };
 
   const handleReset = () => {
-    setTimeLeft(null);
+    update(buttonRef, {
+      startedAt: null,
+      isActive: true,
+    });
+    setTimeLeft(duration);
     setIsRunning(false);
   };
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
+  const handleDisable = () => {
+    update(buttonRef, {
+      isActive: false,
+      startedAt: null,
+    });
   };
 
-  const backgroundColor = isDeleted
+  const buttonColor = !isActive
     ? "bg-gray-400"
     : isRunning
     ? "bg-red-500"
     : "bg-green-500";
 
-  const containerWidth = "w-[77%]";
-
   return (
-    <div className="flex flex-col items-left">
-      {isEditMode ? (
-        <>
-          <Input
-            value={label}
-            onChange={(e) => onLabelChange(e.target.value)}
-            className={`mb-2 text-center ${containerWidth} ${isNew ? "bg-gray-100" : ""}`}
-          />
-          <div className={`flex justify-end ${containerWidth}`}>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={onRemove}
-              className="text-xs"
-            >
-              Удалить полностью
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <Button
-            onClick={handleStart}
-            className={`${containerWidth} h-8 ${backgroundColor} text-white text-sm font-bold`}
-            disabled={isDeleted}
-          >
-            {label}
-          </Button>
-
-          <div className={`flex items-center justify-between mt-1 ${containerWidth}`}>
-            {!isDeleted && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleReset}
-                className="text-xs"
-              >
-                Сброс
-              </Button>
-            )}
-
-            {timeLeft !== null && (
-              <div className="text-sm font-bold text-gray-800 text-center flex-1">
-                {formatTime(timeLeft)}
-              </div>
-            )}
-
-            <div>
-              {isDeleted ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onRestore}
-                  className="text-xs"
-                >
-                  Восстановить
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onDelete}
-                  className="text-xs"
-                >
-                  Удалить
-                </Button>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+    <div className="flex flex-col items-center justify-center text-xs m-1 w-20">
+      <button
+        onClick={handleStart}
+        disabled={!isActive}
+        className={classNames(
+          "text-white font-bold py-1 px-2 rounded w-full h-8 text-[10px]",
+          buttonColor
+        )}
+      >
+        {name}
+      </button>
+      <div className="text-[10px]">{timeLeft}s</div>
+      <div className="flex gap-1 mt-1">
+        <button
+          onClick={handleReset}
+          className="bg-blue-400 hover:bg-blue-500 text-white px-1 py-0.5 rounded text-[10px]"
+        >
+          Reset
+        </button>
+        <button
+          onClick={handleDisable}
+          className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
+        >
+          X
+        </button>
+      </div>
     </div>
   );
 };
