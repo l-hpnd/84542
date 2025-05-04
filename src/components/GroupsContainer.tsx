@@ -1,121 +1,180 @@
-import React, { useEffect, useState } from "react";
-import { ref, onValue, set, update, push } from "firebase/database";
+import { useEffect, useState } from "react";
+import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../firebase";
 import TimerButton from "./TimerButton";
 import { v4 as uuidv4 } from "uuid";
 
-type Button = {
-  id: string;
-  name: string;
-  duration: number;
-  startedAt: number | null;
-  isActive: boolean;
-};
-
-type Group = {
-  id: string;
-  name: string;
-  buttons: Record<string, Button>;
-};
-
-const GroupsContainer: React.FC = () => {
-  const [groups, setGroups] = useState<Record<string, Group>>({});
+export default function GroupsContainer() {
+  const [groups, setGroups] = useState([]);
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     const groupsRef = ref(db, "groups");
-    const unsubscribe = onValue(groupsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setGroups(data);
-      }
+    return onValue(groupsRef, (snapshot) => {
+      const data = snapshot.val() || [];
+      setGroups(data);
     });
-    return () => unsubscribe();
   }, []);
 
-  const handleAddButton = (groupId: string) => {
-    const buttonId = uuidv4();
-    const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
-    set(buttonRef, {
-      id: buttonId,
-      name: `New Button`,
-      duration: 30,
-      startedAt: null,
-      isActive: true,
+  const updateGroups = (newGroups) => {
+    set(ref(db, "groups"), newGroups);
+  };
+
+  const addGroup = () => {
+    const newGroup = {
+      id: uuidv4(),
+      name: "Новая группа",
+      timerDuration: 60,
+      buttons: [],
+    };
+    const newGroups = [...groups, newGroup];
+    updateGroups(newGroups);
+  };
+
+  const addButton = (groupId) => {
+    const newGroups = groups.map((group) => {
+      if (group.id !== groupId) return group;
+      return {
+        ...group,
+        buttons: [
+          ...group.buttons,
+          { id: uuidv4(), name: "Кнопка", disabled: false },
+        ],
+      };
     });
+    updateGroups(newGroups);
   };
 
-  const handleGroupNameChange = (groupId: string, newName: string) => {
-    const groupNameRef = ref(db, `groups/${groupId}`);
-    update(groupNameRef, { name: newName });
-  };
-
-  const handleAddGroup = () => {
-    const groupId = uuidv4();
-    const groupRef = ref(db, `groups/${groupId}`);
-    set(groupRef, {
-      id: groupId,
-      name: "New Group",
-      buttons: {},
+  const updateButtonName = (groupId, buttonId, name) => {
+    const newGroups = groups.map((group) => {
+      if (group.id !== groupId) return group;
+      return {
+        ...group,
+        buttons: group.buttons.map((btn) =>
+          btn.id === buttonId ? { ...btn, name } : btn
+        ),
+      };
     });
+    updateGroups(newGroups);
   };
 
-  const handleRestoreButton = (groupId: string, buttonId: string) => {
-    const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
-    update(buttonRef, { isActive: true });
+  const updateGroupName = (groupId, name) => {
+    const newGroups = groups.map((group) =>
+      group.id === groupId ? { ...group, name } : group
+    );
+    updateGroups(newGroups);
+  };
+
+  const updateGroupTimer = (groupId, minutes, seconds) => {
+    const totalSeconds = parseInt(minutes) * 60 + parseInt(seconds);
+    const newGroups = groups.map((group) =>
+      group.id === groupId ? { ...group, timerDuration: totalSeconds } : group
+    );
+    updateGroups(newGroups);
+  };
+
+  const softDeleteButton = (groupId, buttonId) => {
+    const newGroups = groups.map((group) => {
+      if (group.id !== groupId) return group;
+      const btns = group.buttons.filter((b) => b.id !== buttonId);
+      const deletedBtn = group.buttons.find((b) => b.id === buttonId);
+      if (!deletedBtn) return group;
+      deletedBtn.disabled = true;
+      return {
+        ...group,
+        buttons: [...btns, deletedBtn],
+      };
+    });
+    updateGroups(newGroups);
   };
 
   return (
-    <div className="p-4 space-y-4">
-      {Object.entries(groups).map(([groupId, group]) => (
-        <div key={groupId} className="border rounded p-2 shadow">
-          <input
-            className="text-lg font-semibold mb-2 border-b outline-none"
-            value={group.name}
-            onChange={(e) => handleGroupNameChange(groupId, e.target.value)}
-          />
-          <div className="flex flex-wrap">
-            {group.buttons &&
-              Object.entries(group.buttons)
-                .sort(
-                  ([, a], [, b]) =>
-                    Number(!a.isActive) - Number(!b.isActive)
-                )
-                .map(([buttonId, button]) => (
-                  <div key={buttonId} className="relative">
-                    <TimerButton
-                      groupId={groupId}
-                      buttonId={buttonId}
-                      name={button.name}
-                      duration={button.duration}
-                      isActive={button.isActive}
-                    />
-                    {!button.isActive && (
-                      <button
-                        className="absolute top-0 right-0 text-[10px] bg-yellow-400 text-white px-1 py-0.5 rounded"
-                        onClick={() => handleRestoreButton(groupId, buttonId)}
-                      >
-                        ↩
-                      </button>
-                    )}
-                  </div>
-                ))}
+    <div className="p-4">
+      <button
+        onClick={() => setEditMode(!editMode)}
+        className="bg-yellow-400 px-3 py-1 rounded mb-4 text-white"
+      >
+        {editMode ? "Выход из редактирования" : "Режим редактирования"}
+      </button>
+      {groups.map((group) => (
+        <div key={group.id} className="mb-6 p-4 border rounded">
+          {editMode ? (
+            <input
+              value={group.name}
+              onChange={(e) => updateGroupName(group.id, e.target.value)}
+              className="text-lg font-bold mb-2 border p-1"
+            />
+          ) : (
+            <h2 className="text-xl font-bold mb-2">{group.name}</h2>
+          )}
+
+          {editMode && (
+            <div className="mb-2">
+              <label>Минуты:</label>
+              <input
+                type="number"
+                min={0}
+                className="border mx-2 w-16 text-center"
+                defaultValue={Math.floor(group.timerDuration / 60)}
+                onChange={(e) =>
+                  updateGroupTimer(
+                    group.id,
+                    e.target.value,
+                    group.timerDuration % 60
+                  )
+                }
+              />
+              <label>Секунды:</label>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                className="border mx-2 w-16 text-center"
+                defaultValue={group.timerDuration % 60}
+                onChange={(e) =>
+                  updateGroupTimer(
+                    group.id,
+                    Math.floor(group.timerDuration / 60),
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-4 gap-2">
+            {group.buttons.map((btn) => (
+              <TimerButton
+                key={btn.id}
+                groupId={group.id}
+                button={btn}
+                timerDuration={group.timerDuration}
+                editMode={editMode}
+                onSoftDelete={softDeleteButton}
+                onNameChange={updateButtonName}
+              />
+            ))}
           </div>
-          <button
-            onClick={() => handleAddButton(groupId)}
-            className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
-          >
-            + Add Button
-          </button>
+
+          {editMode && (
+            <button
+              onClick={() => addButton(group.id)}
+              className="mt-3 px-2 py-1 bg-green-500 text-white rounded"
+            >
+              + Кнопка
+            </button>
+          )}
         </div>
       ))}
-      <button
-        onClick={handleAddGroup}
-        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm"
-      >
-        + Add Group
-      </button>
+
+      {editMode && (
+        <button
+          onClick={addGroup}
+          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+        >
+          + Группа
+        </button>
+      )}
     </div>
   );
-};
-
-export default GroupsContainer;
+}
