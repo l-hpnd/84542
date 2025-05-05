@@ -3,6 +3,23 @@ import { ref, onValue, set, update, remove } from "firebase/database";
 import { db } from "../firebase";
 import TimerButton from "./TimerButton";
 import { v4 as uuidv4 } from "uuid";
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  DragEndEvent,
+} from "@dnd-kit/core";
+
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+
+import { CSS } from "@dnd-kit/utilities";
 
 type Button = {
   id: string;
@@ -22,6 +39,47 @@ type Group = {
   order?: number;
 };
 
+// ✅ Компонент для drag-and-drop групп
+const SortableGroupItem = ({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+};
+
+const SortableButtonItem = ({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+};
+
 const GroupsContainer: React.FC = () => {
   const [groups, setGroups] = useState<Record<string, Group>>({});
   const [isEditing, setIsEditing] = useState(false);
@@ -36,6 +94,51 @@ const GroupsContainer: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!isEditing) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const entries = Object.entries(groups);
+    const sorted = entries.sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
+
+    const oldIndex = sorted.findIndex(([id]) => id === active.id);
+    const newIndex = sorted.findIndex(([id]) => id === over.id);
+
+    const newOrder = arrayMove(sorted, oldIndex, newIndex);
+
+    const updates: Record<string, any> = {};
+    newOrder.forEach(([id], index) => {
+      updates[`groups/${id}/order`] = index;
+    });
+
+    update(ref(db), updates).catch(console.error);
+  };
+
+  const handleButtonDragEnd = (groupId: string) => (event: DragEndEvent) => {
+    if (!isEditing) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const group = groups[groupId];
+    if (!group || !group.buttons) return;
+
+    const entries = Object.entries(group.buttons);
+    const sorted = entries.sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
+    const oldIndex = sorted.findIndex(([id]) => id === active.id);
+    const newIndex = sorted.findIndex(([id]) => id === over.id);
+    const newOrder = arrayMove(sorted, oldIndex, newIndex);
+
+    const updates: Record<string, any> = {};
+    newOrder.forEach(([id], index) => {
+      updates[`groups/${groupId}/buttons/${id}/order`] = index;
+    });
+
+    update(ref(db), updates).catch(console.error);
+  };
 
   const handleAddGroup = () => {
     const groupId = uuidv4();
@@ -118,40 +221,6 @@ const GroupsContainer: React.FC = () => {
     update(ref(db, `groups/${groupId}`), { buttons: newButtons });
   };
 
-  const moveButton = (groupId: string, buttonId: string, direction: "up" | "down") => {
-    const groupButtons = groups[groupId]?.buttons;
-    if (!groupButtons) return;
-
-    const sorted = Object.entries(groupButtons).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
-    const index = sorted.findIndex(([id]) => id === buttonId);
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (targetIndex < 0 || targetIndex >= sorted.length) return;
-
-    const [currentId, currentBtn] = sorted[index];
-    const [targetId, targetBtn] = sorted[targetIndex];
-
-    const currentRef = ref(db, `groups/${groupId}/buttons/${currentId}`);
-    const targetRef = ref(db, `groups/${groupId}/buttons/${targetId}`);
-
-    update(currentRef, { order: targetBtn.order });
-    update(targetRef, { order: currentBtn.order });
-  };
-
-  const moveGroup = (groupId: string, direction: "up" | "down") => {
-    const sorted = Object.entries(groups).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
-    const index = sorted.findIndex(([id]) => id === groupId);
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (targetIndex < 0 || targetIndex >= sorted.length) return;
-
-    const [currentId, currentGroup] = sorted[index];
-    const [targetId, targetGroup] = sorted[targetIndex];
-
-    update(ref(db, `groups/${currentId}`), { order: targetGroup.order });
-    update(ref(db, `groups/${targetId}`), { order: currentGroup.order });
-  };
-
   return (
     <div className="p-4 space-y-4">
       <button
@@ -161,121 +230,142 @@ const GroupsContainer: React.FC = () => {
         {isEditing ? "Exit Edit Mode" : "Edit Mode"}
       </button>
 
-      {Object.entries(groups)
-        .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
-        .map(([groupId, group]) => (
-          <div key={groupId} className="border rounded p-3 shadow space-y-2">
-            {isEditing ? (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <input
-                  className="text-lg font-semibold border-b outline-none flex-1 mr-2"
-                  value={group.name}
-                  onChange={(e) => handleGroupNameChange(groupId, e.target.value)}
-                />
-                <div className="flex items-center gap-1">
-                  <span className="text-sm">Duration:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-16 border px-1 py-0.5 rounded text-sm"
-                    value={Math.floor(group.defaultDuration / 60)}
-                    onChange={(e) => {
-                      const minutes = parseInt(e.target.value) || 0;
-                      const seconds = group.defaultDuration % 60;
-                      handleDurationChange(groupId, minutes * 60 + seconds);
-                    }}
-                  />
-                  <span className="text-sm">min</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    className="w-16 border px-1 py-0.5 rounded text-sm"
-                    value={group.defaultDuration % 60}
-                    onChange={(e) => {
-                      const seconds = parseInt(e.target.value) || 0;
-                      const minutes = Math.floor(group.defaultDuration / 60);
-                      handleDurationChange(groupId, minutes * 60 + seconds);
-                    }}
-                  />
-                  <span className="text-sm text-gray-600">sec</span>
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => moveGroup(groupId, "up")}
-                    className="bg-gray-300 hover:bg-gray-400 text-xs px-2 py-1 rounded"
-                  >↑</button>
-                  <button
-                    onClick={() => moveGroup(groupId, "down")}
-                    className="bg-gray-300 hover:bg-gray-400 text-xs px-2 py-1 rounded"
-                  >↓</button>
-                  <button
-                    onClick={() => handleDeleteGroup(groupId)}
-                    className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm"
-                  >Delete Group</button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-lg font-semibold">{group.name}</div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {group.buttons &&
-                Object.entries(group.buttons)
-  .sort(([, a], [, b]) => {
-    // Сначала активные, затем неактивные; внутри каждой группы — по order
-    if (a.isActive !== b.isActive) {
-      return a.isActive ? -1 : 1;
-    }
-    return (a.order ?? 0) - (b.order ?? 0);
-  })
-  .map(([buttonId, button]) => (
-
-                    <div key={buttonId} className="flex items-center gap-2">
-                      {isEditing ? (
-                        <>
-                          <input
-                            className="text-sm border px-2 py-1 rounded"
-                            value={button.name}
-                            onChange={(e) =>
-                              handleButtonNameChange(groupId, buttonId, e.target.value)
-                            }
-                          />                    
-                          <button
-                            onClick={() => handleDeleteButton(groupId, buttonId)}
-                            className="bg-red-400 hover:bg-red-500 text-white text-xs px-2 py-1 rounded"
-                          >×</button>
-                        </>
-                      ) : (
-                        <>
-                          <TimerButton
-                            groupId={groupId}
-                            buttonId={buttonId}
-                            name={button.name}
-                            duration={group.defaultDuration}
-                            isActive={button.isActive}
-                          />
-                          
-                        </>
-                      )}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext
+          items={Object.keys(groups).sort((a, b) => (groups[a].order ?? 0) - (groups[b].order ?? 0))}
+          strategy={verticalListSortingStrategy}
+        >
+          {Object.entries(groups)
+            .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
+            .map(([groupId, group]) => (
+              <SortableGroupItem key={groupId} id={groupId}>
+                <div className="border rounded p-3 shadow space-y-2 bg-white">
+                  {isEditing ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <input
+                        className="text-lg font-semibold border-b outline-none flex-1 mr-2"
+                        value={group.name}
+                        onChange={(e) =>
+                          handleGroupNameChange(groupId, e.target.value)
+                        }
+                      />
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm">Duration:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-16 border px-1 py-0.5 rounded text-sm"
+                          value={Math.floor(group.defaultDuration / 60)}
+                          onChange={(e) => {
+                            const minutes = parseInt(e.target.value) || 0;
+                            const seconds = group.defaultDuration % 60;
+                            handleDurationChange(groupId, minutes * 60 + seconds);
+                          }}
+                        />
+                        <span className="text-sm">min</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          className="w-16 border px-1 py-0.5 rounded text-sm"
+                          value={group.defaultDuration % 60}
+                          onChange={(e) => {
+                            const seconds = parseInt(e.target.value) || 0;
+                            const minutes = Math.floor(group.defaultDuration / 60);
+                            handleDurationChange(groupId, minutes * 60 + seconds);
+                          }}
+                        />
+                        <span className="text-sm text-gray-600">sec</span>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteGroup(groupId)}
+                        className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm"
+                      >
+                        Delete Group
+                      </button>
                     </div>
-                  ))}
-            </div>
+                  ) : (
+                    <div className="text-lg font-semibold">{group.name}</div>
+                  )}
 
-            {isEditing && (
-              <button
-                onClick={() => handleAddButton(groupId)}
-                className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
-              >+ Add Button</button>
-            )}
-          </div>
-        ))}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleButtonDragEnd(groupId)}
+                  >
+                    <SortableContext
+                      items={Object.keys(group.buttons || {})}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="flex flex-wrap gap-2">
+                        {group.buttons &&
+                          Object.entries(group.buttons)
+                            .sort(([, a], [, b]) => {
+                              if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+                              return (a.order ?? 0) - (b.order ?? 0);
+                            })
+                            .map(([buttonId, button]) => (
+                              <SortableButtonItem key={buttonId} id={buttonId}>
+                                <div className="flex items-center gap-2">
+                                  {isEditing ? (
+                                    <>
+                                      <input
+                                        className="text-sm border px-2 py-1 rounded"
+                                        value={button.name}
+                                        onChange={(e) =>
+                                          handleButtonNameChange(
+                                            groupId,
+                                            buttonId,
+                                            e.target.value
+                                          )
+                                        }
+                                      />
+                                      <button
+                                        onClick={() =>
+                                          handleDeleteButton(groupId, buttonId)
+                                        }
+                                        className="bg-red-400 hover:bg-red-500 text-white text-xs px-2 py-1 rounded"
+                                      >
+                                        ×
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <TimerButton
+                                      groupId={groupId}
+                                      buttonId={buttonId}
+                                      name={button.name}
+                                      duration={group.defaultDuration}
+                                      isActive={button.isActive}
+                                    />
+                                  )}
+                                </div>
+                              </SortableButtonItem>
+                            ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+
+                  {isEditing && (
+                    <button
+                      onClick={() => handleAddButton(groupId)}
+                      className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+                    >
+                      + Add Button
+                    </button>
+                  )}
+                </div>
+              </SortableGroupItem>
+            ))}
+        </SortableContext>
+      </DndContext>
 
       {isEditing && (
         <button
           onClick={handleAddGroup}
           className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm"
-        >+ Add Group</button>
+        >
+          + Add Group
+        </button>
       )}
     </div>
   );

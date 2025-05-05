@@ -101,36 +101,38 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
-
-  return (
-    <div className="flex flex-col items-center justify-center text-xs m-1 w-20">
+return (
+  <div className="flex flex-col items-center justify-center text-xs m-1 w-28">
+    <button
+      onClick={handleStart}
+      disabled={!isActive}
+      className={classNames(
+  "text-white font-semibold px-2 py-1 rounded w-full h-12 text-sm leading-none text-center flex items-center justify-center whitespace-normal break-words",
+  buttonColor
+)}
+    >
+      {name}
+    </button>
+    <div className="text-[12px] font-semibold">{formatTime(timeLeft)}</div>
+    <div className="flex gap-1 mt-1">
       <button
-        onClick={handleStart}
-        disabled={!isActive}
-        className={classNames(
-          "text-white font-bold py-1 px-2 rounded w-full h-9 text-[11px]",
-          buttonColor
-        )}
+        onClick={handleReset}
+        className="bg-blue-400 hover:bg-blue-500 text-white px-1 py-0.5 rounded text-[10px]"
       >
-        {name}
+        Reset
       </button>
-      <div className="text-[12px] font-semibold">{formatTime(timeLeft)}</div>
-      <div className="flex gap-1 mt-1">
-        <button
-          onClick={handleReset}
-          className="bg-blue-400 hover:bg-blue-500 text-white px-1 py-0.5 rounded text-[10px]"
-        >
-          Reset
-        </button>
-        <button
-          onClick={handleDisable}
-          className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
-        >
-          X
-        </button>
-      </div>
+      <button
+        onClick={handleDisable}
+        className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
+      >
+        X
+      </button>
     </div>
-  );
+  </div>
+);
+
+
+
 };
 
 export default TimerButton;
