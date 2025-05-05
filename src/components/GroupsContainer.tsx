@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ref, onValue, set, update, remove } from "firebase/database";
+import { ref, onValue, set, get, update, remove } from "firebase/database";
 import { db } from "../firebase";
 import TimerButton from "./TimerButton";
 import { v4 as uuidv4 } from "uuid";
@@ -21,34 +21,11 @@ import {
 
 import { CSS } from "@dnd-kit/utilities";
 
-type Button = {
-  id: string;
-  name: string;
-  duration: number;
-  startedAt: number | null;
-  isActive: boolean;
-  originalIndex?: number;
-  order?: number;
-};
-
-type Group = {
-  id: string;
-  name: string;
-  defaultDuration: number;
-  buttons: Record<string, Button>;
-  order?: number;
-};
+// ... типы Button и Group (без изменений)
 
 // ✅ Компонент для drag-and-drop групп
-const SortableGroupItem = ({
-  id,
-  children,
-}: {
-  id: string;
-  children: React.ReactNode;
-}) => {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id });
+const SortableGroupItem = ({ id, children }: { id: string; children: React.ReactNode }) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -60,15 +37,8 @@ const SortableGroupItem = ({
   );
 };
 
-const SortableButtonItem = ({
-  id,
-  children,
-}: {
-  id: string;
-  children: React.ReactNode;
-}) => {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id });
+const SortableButtonItem = ({ id, children }: { id: string; children: React.ReactNode }) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -176,7 +146,9 @@ const GroupsContainer: React.FC = () => {
   const handleAddButton = (groupId: string) => {
     const buttonId = uuidv4();
     const duration = groups[groupId]?.defaultDuration || 30;
-    const index = Object.keys(groups[groupId]?.buttons || {}).length;
+    const index =
+      Math.max(0, ...Object.values(groups[groupId]?.buttons || {}).map((b) => b.order ?? 0)) + 1;
+
     const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
     set(buttonRef, {
       id: buttonId,
@@ -194,31 +166,29 @@ const GroupsContainer: React.FC = () => {
     remove(buttonRef);
   };
 
-  const handleButtonNameChange = (
-    groupId: string,
-    buttonId: string,
-    newName: string
-  ) => {
+  const handleButtonNameChange = (groupId: string, buttonId: string, newName: string) => {
     const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
     update(buttonRef, { name: newName });
   };
 
   const handleDisable = (groupId: string, buttonId: string) => {
     const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
-    update(buttonRef, { isActive: false });
+    update(buttonRef, { isActive: false, order: 9999 });
   };
 
-  const handleRestore = (groupId: string, buttonId: string) => {
-    const button = groups[groupId]?.buttons[buttonId];
-    const originalIndex = button?.originalIndex ?? 0;
-    const updatedButtons = Object.entries(groups[groupId]?.buttons || {})
-      .filter(([id]) => id !== buttonId)
-      .sort(([, a], [, b]) => (a.originalIndex ?? 0) - (b.originalIndex ?? 0));
+  const handleRestore = async (groupId: string, buttonId: string) => {
+    const buttonRef = ref(db, `groups/${groupId}/buttons/${buttonId}`);
+    const buttonSnapshot = await get(buttonRef);
+    const button = buttonSnapshot.val();
 
-    updatedButtons.splice(originalIndex, 0, [buttonId, { ...button, isActive: true }]);
+    if (!button) return;
 
-    const newButtons = Object.fromEntries(updatedButtons);
-    update(ref(db, `groups/${groupId}`), { buttons: newButtons });
+    const originalOrder = button.originalOrder ?? 0;
+
+    await update(buttonRef, {
+      isActive: true,
+      order: originalOrder,
+    });
   };
 
   return (
@@ -237,66 +207,98 @@ const GroupsContainer: React.FC = () => {
         >
           {Object.entries(groups)
             .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
-            .map(([groupId, group]) => (
-              <SortableGroupItem key={groupId} id={groupId}>
-                <div className="border rounded p-3 shadow space-y-2 bg-white">
-                  {isEditing ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <input
-                        className="text-lg font-semibold border-b outline-none flex-1 mr-2"
-                        value={group.name}
-                        onChange={(e) =>
-                          handleGroupNameChange(groupId, e.target.value)
-                        }
-                      />
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm">Duration:</span>
+            .map(([groupId, group]) => {
+              const GroupWrapper = isEditing ? SortableGroupItem : React.Fragment;
+              const groupProps = isEditing ? { id: groupId } : {};
+              return (
+                <GroupWrapper key={groupId} {...groupProps}>
+                  <div className="border rounded p-3 shadow space-y-2 bg-white">
+                    {isEditing ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <input
-                          type="number"
-                          min={0}
-                          className="w-16 border px-1 py-0.5 rounded text-sm"
-                          value={Math.floor(group.defaultDuration / 60)}
-                          onChange={(e) => {
-                            const minutes = parseInt(e.target.value) || 0;
-                            const seconds = group.defaultDuration % 60;
-                            handleDurationChange(groupId, minutes * 60 + seconds);
-                          }}
+                          className="text-lg font-semibold border-b outline-none flex-1 mr-2"
+                          value={group.name}
+                          onChange={(e) => handleGroupNameChange(groupId, e.target.value)}
                         />
-                        <span className="text-sm">min</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          className="w-16 border px-1 py-0.5 rounded text-sm"
-                          value={group.defaultDuration % 60}
-                          onChange={(e) => {
-                            const seconds = parseInt(e.target.value) || 0;
-                            const minutes = Math.floor(group.defaultDuration / 60);
-                            handleDurationChange(groupId, minutes * 60 + seconds);
-                          }}
-                        />
-                        <span className="text-sm text-gray-600">sec</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm">Duration:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-16 border px-1 py-0.5 rounded text-sm"
+                            value={Math.floor(group.defaultDuration / 60)}
+                            onChange={(e) => {
+                              const minutes = parseInt(e.target.value) || 0;
+                              const seconds = group.defaultDuration % 60;
+                              handleDurationChange(groupId, minutes * 60 + seconds);
+                            }}
+                          />
+                          <span className="text-sm">min</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            className="w-16 border px-1 py-0.5 rounded text-sm"
+                            value={group.defaultDuration % 60}
+                            onChange={(e) => {
+                              const seconds = parseInt(e.target.value) || 0;
+                              const minutes = Math.floor(group.defaultDuration / 60);
+                              handleDurationChange(groupId, minutes * 60 + seconds);
+                            }}
+                          />
+                          <span className="text-sm text-gray-600">sec</span>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteGroup(groupId)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm"
+                        >
+                          Delete Group
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleDeleteGroup(groupId)}
-                        className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm"
-                      >
-                        Delete Group
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-lg font-semibold">{group.name}</div>
-                  )}
+                    ) : (
+                      <div className="text-lg font-semibold">{group.name}</div>
+                    )}
 
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleButtonDragEnd(groupId)}
-                  >
-                    <SortableContext
-                      items={Object.keys(group.buttons || {})}
-                      strategy={verticalListSortingStrategy}
-                    >
+                    {isEditing ? (
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleButtonDragEnd(groupId)}
+                      >
+                        <SortableContext
+                          items={Object.keys(group.buttons || {})}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="flex flex-wrap gap-2">
+                            {group.buttons &&
+                              Object.entries(group.buttons)
+                                .sort(([, a], [, b]) => {
+                                  if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+                                  return (a.order ?? 0) - (b.order ?? 0);
+                                })
+                                .map(([buttonId, button]) => (
+                                  <SortableButtonItem key={buttonId} id={buttonId}>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        className="text-sm border px-2 py-1 rounded"
+                                        value={button.name}
+                                        onChange={(e) =>
+                                          handleButtonNameChange(groupId, buttonId, e.target.value)
+                                        }
+                                      />
+                                      <button
+                                        onClick={() => handleDeleteButton(groupId, buttonId)}
+                                        className="bg-red-400 hover:bg-red-500 text-white text-xs px-2 py-1 rounded"
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  </SortableButtonItem>
+                                ))}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
+                    ) : (
                       <div className="flex flex-wrap gap-2">
                         {group.buttons &&
                           Object.entries(group.buttons)
@@ -305,57 +307,31 @@ const GroupsContainer: React.FC = () => {
                               return (a.order ?? 0) - (b.order ?? 0);
                             })
                             .map(([buttonId, button]) => (
-                              <SortableButtonItem key={buttonId} id={buttonId}>
-                                <div className="flex items-center gap-2">
-                                  {isEditing ? (
-                                    <>
-                                      <input
-                                        className="text-sm border px-2 py-1 rounded"
-                                        value={button.name}
-                                        onChange={(e) =>
-                                          handleButtonNameChange(
-                                            groupId,
-                                            buttonId,
-                                            e.target.value
-                                          )
-                                        }
-                                      />
-                                      <button
-                                        onClick={() =>
-                                          handleDeleteButton(groupId, buttonId)
-                                        }
-                                        className="bg-red-400 hover:bg-red-500 text-white text-xs px-2 py-1 rounded"
-                                      >
-                                        ×
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <TimerButton
-                                      groupId={groupId}
-                                      buttonId={buttonId}
-                                      name={button.name}
-                                      duration={group.defaultDuration}
-                                      isActive={button.isActive}
-                                    />
-                                  )}
-                                </div>
-                              </SortableButtonItem>
+                              <div key={buttonId} className="flex items-center gap-2">
+                                <TimerButton
+                                  groupId={groupId}
+                                  buttonId={buttonId}
+                                  name={button.name}
+                                  duration={group.defaultDuration}
+                                  isActive={button.isActive}
+                                />
+                              </div>
                             ))}
                       </div>
-                    </SortableContext>
-                  </DndContext>
+                    )}
 
-                  {isEditing && (
-                    <button
-                      onClick={() => handleAddButton(groupId)}
-                      className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
-                    >
-                      + Add Button
-                    </button>
-                  )}
-                </div>
-              </SortableGroupItem>
-            ))}
+                    {isEditing && (
+                      <button
+                        onClick={() => handleAddButton(groupId)}
+                        className="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+                      >
+                        + Add Button
+                      </button>
+                    )}
+                  </div>
+                </GroupWrapper>
+              );
+            })}
         </SortableContext>
       </DndContext>
 

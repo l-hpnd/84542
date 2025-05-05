@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ref, update, onValue } from "firebase/database";
+import { ref, update, onValue, get } from "firebase/database";
 import { db } from "../firebase";
 import classNames from "classnames";
 
@@ -74,13 +74,23 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     }
   };
 
-  const handleReset = () => {
-    update(buttonRef, {
-      startedAt: null,
-      isActive: true,
-    });
-    setTimeLeft(duration);
-    setIsRunning(false);
+  const handleReset = async () => {
+    try {
+      const snapshot = await get(buttonRef);
+      const data = snapshot.val();
+      const originalOrder = data?.originalOrder ?? 0;
+
+      await update(buttonRef, {
+        startedAt: null,
+        isActive: true,
+        order: originalOrder,
+      });
+
+      setTimeLeft(duration);
+      setIsRunning(false);
+    } catch (error) {
+      console.error("Ошибка при сбросе:", error);
+    }
   };
 
   const handleDisable = () => {
@@ -101,38 +111,36 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
-return (
-  <div className="flex flex-col items-center justify-center text-xs m-1 w-28">
-    <button
-      onClick={handleStart}
-      disabled={!isActive}
-      className={classNames(
-  "text-white font-semibold px-2 py-1 rounded w-full h-12 text-sm leading-none text-center flex items-center justify-center whitespace-normal break-words",
-  buttonColor
-)}
-    >
-      {name}
-    </button>
-    <div className="text-[12px] font-semibold">{formatTime(timeLeft)}</div>
-    <div className="flex gap-1 mt-1">
+
+  return (
+    <div className="flex flex-col items-center justify-center text-xs m-1 w-28">
       <button
-        onClick={handleReset}
-        className="bg-blue-400 hover:bg-blue-500 text-white px-1 py-0.5 rounded text-[10px]"
+        onClick={handleStart}
+        disabled={!isActive}
+        className={classNames(
+          "text-white font-semibold px-2 py-1 rounded w-full h-12 text-sm leading-none text-center flex items-center justify-center whitespace-normal break-words",
+          buttonColor
+        )}
       >
-        Reset
+        {name}
       </button>
-      <button
-        onClick={handleDisable}
-        className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
-      >
-        X
-      </button>
+      <div className="text-[12px] font-semibold">{formatTime(timeLeft)}</div>
+      <div className="flex gap-1 mt-1">
+        <button
+          onClick={handleReset}
+          className="bg-blue-400 hover:bg-blue-500 text-white px-1 py-0.5 rounded text-[10px]"
+        >
+          Reset
+        </button>
+        <button
+          onClick={handleDisable}
+          className="bg-gray-600 hover:bg-gray-700 text-white px-1 py-0.5 rounded text-[10px]"
+        >
+          X
+        </button>
+      </div>
     </div>
-  </div>
-);
-
-
-
+  );
 };
 
 export default TimerButton;
