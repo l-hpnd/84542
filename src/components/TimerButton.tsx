@@ -74,24 +74,32 @@ const TimerButton: React.FC<TimerButtonProps> = ({
     }
   };
 
-  const handleReset = async () => {
-    try {
-      const snapshot = await get(buttonRef);
-      const data = snapshot.val();
-      const originalOrder = data?.originalOrder ?? 0;
+ const handleReset = async () => {
+  try {
+    const snapshot = await get(buttonRef);
+    const data = snapshot.val();
+    const originalOrder = data?.originalOrder ?? 0;
 
+    if (!data?.isActive) {
       await update(buttonRef, {
         startedAt: null,
         isActive: true,
         order: originalOrder,
       });
-
-      setTimeLeft(duration);
-      setIsRunning(false);
-    } catch (error) {
-      console.error("Ошибка при сбросе:", error);
+    } else {
+      await update(buttonRef, {
+        startedAt: null,
+      });
     }
-  };
+
+    setStartedAt(null);
+    setTimeLeft(duration);
+    setIsRunning(false);
+  } catch (error) {
+    console.error("Ошибка при сбросе:", error);
+  }
+};
+
 
   const handleDisable = () => {
     update(buttonRef, {

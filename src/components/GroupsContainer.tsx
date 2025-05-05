@@ -31,9 +31,15 @@ const SortableGroupItem = ({ id, children }: { id: string; children: React.React
     transition,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
-    </div>
+    <div ref={setNodeRef} style={style}>
+  <div {...attributes} {...listeners} className="cursor-move px-1 text-xl select-none">
+    ⠿
+  </div>
+  <div className="flex-1">
+    {children}
+  </div>
+</div>
+
   );
 };
 
@@ -44,9 +50,15 @@ const SortableButtonItem = ({ id, children }: { id: string; children: React.Reac
     transition,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
-    </div>
+    <div ref={setNodeRef} style={style}>
+  <div {...attributes} {...listeners} className="cursor-move px-1 text-xl select-none">
+    ⠿
+  </div>
+  <div className="flex-1">
+    {children}
+  </div>
+</div>
+
   );
 };
 
@@ -216,10 +228,11 @@ const GroupsContainer: React.FC = () => {
                     {isEditing ? (
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <input
-                          className="text-lg font-semibold border-b outline-none flex-1 mr-2"
-                          value={group.name}
-                          onChange={(e) => handleGroupNameChange(groupId, e.target.value)}
-                        />
+  className="text-lg font-semibold border-b outline-none flex-1 mr-2"
+  defaultValue={group.name}
+  onBlur={(e) => handleGroupNameChange(groupId, e.target.value)}
+/>
+
                         <div className="flex items-center gap-1">
                           <span className="text-sm">Duration:</span>
                           <input
@@ -280,12 +293,11 @@ const GroupsContainer: React.FC = () => {
                                   <SortableButtonItem key={buttonId} id={buttonId}>
                                     <div className="flex items-center gap-2">
                                       <input
-                                        className="text-sm border px-2 py-1 rounded"
-                                        value={button.name}
-                                        onChange={(e) =>
-                                          handleButtonNameChange(groupId, buttonId, e.target.value)
-                                        }
-                                      />
+  className="text-sm border px-2 py-1 rounded"
+  defaultValue={button.name}
+  onBlur={(e) => handleButtonNameChange(groupId, buttonId, e.target.value)}
+/>
+
                                       <button
                                         onClick={() => handleDeleteButton(groupId, buttonId)}
                                         className="bg-red-400 hover:bg-red-500 text-white text-xs px-2 py-1 rounded"
