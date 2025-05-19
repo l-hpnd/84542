@@ -313,22 +313,32 @@ const GroupsContainer: React.FC = () => {
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {group.buttons &&
-                          Object.entries(group.buttons)
-                            .sort(([, a], [, b]) => {
-                              if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-                              return (a.order ?? 0) - (b.order ?? 0);
-                            })
-                            .map(([buttonId, button]) => (
-                              <div key={buttonId} className="flex items-center gap-2">
-                                <TimerButton
-                                  groupId={groupId}
-                                  buttonId={buttonId}
-                                  name={button.name}
-                                  duration={group.defaultDuration}
-                                  isActive={button.isActive}
-                                />
-                              </div>
-                            ))}
+  Object.entries(group.buttons)
+    .sort(([, a], [, b]) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+
+      // Только для активных кнопок: сортируем по числу в начале названия
+      const getNumber = (name: string) => {
+        const match = name.match(/^(\d+)/);
+        return match ? parseInt(match[1], 10) : Infinity;
+      };
+
+      const aNum = getNumber(a.name);
+      const bNum = getNumber(b.name);
+      return aNum - bNum;
+    })
+    .map(([buttonId, button]) => (
+      <div key={buttonId} className="flex items-center gap-2">
+        <TimerButton
+          groupId={groupId}
+          buttonId={buttonId}
+          name={button.name}
+          duration={group.defaultDuration}
+          isActive={button.isActive}
+        />
+      </div>
+    ))}
+
                       </div>
                     )}
 
