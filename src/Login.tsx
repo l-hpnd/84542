@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./firebase";
 
-const FIXED_PASSWORD = ",f,ks[ez,ks"; // 🔒 задай свой пароль здесь
+const FIXED_PASSWORD = "knopkihuyopki"; // 🔒 задай свой пароль здесь
 
 export const Login = () => {
   const [email, setEmail] = useState("");
